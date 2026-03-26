@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    container_name: energy_forecasting_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - EIA_API_KEY=${EIA_API_KEY}
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+  dashboard:
+    build: .
+    container_name: energy_forecasting_dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - EIA_API_KEY=${EIA_API_KEY}
+    command: streamlit run dashboard.py --server.address 0.0.0.0 --server.port 8501

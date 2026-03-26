@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+models/*.pkl
+models/*.csv
+data/*.csv
+.pytest_cache
+.vscode
+.idea
