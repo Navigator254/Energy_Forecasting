@@ -18,3 +18,5 @@ data/*.csv
 
 .env
 .streamlit/secrets.toml
+models/metrics.json
+models/residual_stats.json
