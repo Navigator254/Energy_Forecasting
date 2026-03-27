@@ -58,6 +58,33 @@ def get_usage_insights(csv_path: str) -> dict:
     return compute_usage_insights(csv_path)
 
 
+def bootstrap_section(default_parent: str, default_subba: str) -> bool:
+    st.warning("Project data is not initialized yet on this deployment. Run the setup pipeline first.")
+
+    st.subheader("Initialize project data and model")
+    with st.form("bootstrap_form"):
+        parent_region = st.text_input("Parent region", value=default_parent)
+        subba = st.text_input("Sub-region (optional)", value=default_subba)
+        submitted = st.form_submit_button("Run setup and retraining")
+
+    if submitted:
+        try:
+            with st.spinner("Fetching data, cleaning, training model, and saving artifacts..."):
+                result = run_retraining_pipeline(
+                    parent_region=parent_region,
+                    subba=subba or None,
+                )
+                st.cache_data.clear()
+            st.success("Setup complete.")
+            st.json(result)
+            st.info("Please click 'Rerun' in Streamlit or refresh the page.")
+        except Exception as exc:
+            st.error(f"Setup failed: {exc}")
+        return True
+
+    st.stop()
+
+
 def main():
     init_db()
 
@@ -73,8 +100,7 @@ def main():
         subba = st.text_input("Retrain sub-region (optional)", "")
 
     if not Path(csv_path).exists():
-        st.error(f"CSV not found: {csv_path}")
-        return
+        bootstrap_section(parent_region, subba)
 
     df = load_clean_data(csv_path)
     one_step = predict_next_from_csv(csv_path)
