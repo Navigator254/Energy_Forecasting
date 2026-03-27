@@ -80,9 +80,17 @@ def forecast_hours_from_csv(
     return forecasts
 
 
-def forecast_next_24_hours_from_csv(csv_path: str, persist: bool = False, source: str = "api") -> List[Dict[str, float | str]]:
+def forecast_next_24_hours_from_csv(
+    csv_path: str,
+    persist: bool = False,
+    source: str = "api",
+) -> List[Dict[str, float | str]]:
     return forecast_hours_from_csv(csv_path, 24, persist=persist, source=source)
 
 
-def forecast_next_7_days_from_csv(csv_path: str, persist: bool = False, source: str = "api") -> List[Dict[str, float | str]]:
+def forecast_next_7_days_from_csv(
+    csv_path: str,
+    persist: bool = False,
+    source: str = "api",
+) -> List[Dict[str, float | str]]:
     return forecast_hours_from_csv(csv_path, 168, persist=persist, source=source)
