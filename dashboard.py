@@ -79,6 +79,84 @@ def style_risk_table(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols].copy()
 
 
+def format_forecast_history(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    out = df.copy()
+    if "created_at" in out.columns:
+        out["created_at"] = pd.to_datetime(out["created_at"], errors="coerce")
+        out["run_time"] = out["created_at"].dt.strftime("%Y-%m-%d %H:%M")
+    else:
+        out["run_time"] = ""
+
+    if "horizon_hours" in out.columns:
+        out["horizon"] = out["horizon_hours"].map(
+            {
+                24: "24 Hours",
+                168: "7 Days",
+            }
+        ).fillna(out["horizon_hours"].astype(str) + " Hours")
+    else:
+        out["horizon"] = ""
+
+    rename_map = {
+        "source": "source",
+        "model_name": "model",
+        "point_count": "points",
+        "csv_path": "csv_path",
+    }
+    out = out.rename(columns=rename_map)
+
+    keep_cols = ["run_time", "source", "horizon", "model", "points", "csv_path"]
+    keep_cols = [c for c in keep_cols if c in out.columns]
+    return out[keep_cols]
+
+
+def format_retraining_history(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    out = df.copy()
+    if "created_at" in out.columns:
+        out["created_at"] = pd.to_datetime(out["created_at"], errors="coerce")
+        out["run_time"] = out["created_at"].dt.strftime("%Y-%m-%d %H:%M")
+    else:
+        out["run_time"] = ""
+
+    rename_map = {
+        "parent_region": "region",
+        "subba": "sub_region",
+        "rows_in_dataset": "rows",
+        "anomaly_count": "anomalies",
+        "model_name": "model",
+        "mae": "MAE",
+        "rmse": "RMSE",
+        "r2": "R2",
+        "mape": "MAPE",
+    }
+    out = out.rename(columns=rename_map)
+
+    for col in ["MAE", "RMSE", "R2", "MAPE"]:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce").round(3)
+
+    keep_cols = [
+        "run_time",
+        "region",
+        "sub_region",
+        "rows",
+        "anomalies",
+        "MAE",
+        "RMSE",
+        "R2",
+        "MAPE",
+        "model",
+    ]
+    keep_cols = [c for c in keep_cols if c in out.columns]
+    return out[keep_cols]
+
+
 def render_home(csv_path: str, df: pd.DataFrame) -> None:
     st.subheader("Overview")
 
@@ -311,7 +389,8 @@ def render_history_ops(parent_region: str, subba: str) -> None:
             if forecast_runs.empty:
                 st.info("No saved forecast runs yet.")
             else:
-                st.dataframe(forecast_runs, use_container_width=True)
+                pretty_forecast_runs = format_forecast_history(forecast_runs)
+                st.dataframe(pretty_forecast_runs, use_container_width=True)
 
     with col2:
         if st.button("Load retraining history", use_container_width=True):
@@ -319,7 +398,8 @@ def render_history_ops(parent_region: str, subba: str) -> None:
             if retraining_runs.empty:
                 st.info("No retraining runs yet.")
             else:
-                st.dataframe(retraining_runs, use_container_width=True)
+                pretty_retraining_runs = format_retraining_history(retraining_runs)
+                st.dataframe(pretty_retraining_runs, use_container_width=True)
 
     if st.button("Run retraining pipeline now", type="primary"):
         with st.spinner("Fetching data and retraining..."):
