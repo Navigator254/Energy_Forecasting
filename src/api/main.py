@@ -1,8 +1,8 @@
 from typing import Dict, List
 
 from fastapi import FastAPI, HTTPException, Query
-from src.utils.env_loader import load_project_env
 from pydantic import BaseModel
+from src.utils.env_loader import load_project_env
 
 from src.models.predict import predict_from_feature_payload, predict_next_from_csv
 from src.services.analytics_service import compute_usage_insights
@@ -10,6 +10,10 @@ from src.services.backtest_service import backtest_one_step
 from src.services.forecast_service import (
     forecast_next_24_hours_from_csv,
     forecast_next_7_days_from_csv,
+)
+from src.services.grid_risk_service import (
+    grid_risk_24h_from_csv,
+    grid_risk_7d_from_csv,
 )
 from src.services.model_comparison_service import compare_models_from_csv
 from src.services.retrain_service import run_retraining_pipeline
@@ -21,7 +25,7 @@ load_project_env()
 app = FastAPI(
     title="Energy Forecasting API",
     description="Hourly electricity load prediction API using trained regression models",
-    version="1.7.0",
+    version="1.8.0",
 )
 
 
@@ -112,6 +116,30 @@ def forecast_7d(payload: CsvPathPayload) -> Dict[str, List[Dict[str, float | str
     try:
         forecast = forecast_next_7_days_from_csv(payload.csv_path, persist=True, source="api")
         return {"forecast_7d": forecast}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/grid-risk-24h")
+def grid_risk_24h(payload: CsvPathPayload) -> Dict[str, object]:
+    try:
+        result = grid_risk_24h_from_csv(payload.csv_path)
+        return {
+            "summary": result["summary"],
+            "risk_table": result["risk_table"].to_dict(orient="records"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/grid-risk-7d")
+def grid_risk_7d(payload: CsvPathPayload) -> Dict[str, object]:
+    try:
+        result = grid_risk_7d_from_csv(payload.csv_path)
+        return {
+            "summary": result["summary"],
+            "risk_table": result["risk_table"].to_dict(orient="records"),
+        }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
