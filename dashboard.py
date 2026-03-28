@@ -147,7 +147,13 @@ def render_forecasts(csv_path: str) -> None:
     with col1:
         if st.button("Run 24-hour forecast", use_container_width=True):
             with st.spinner("Computing 24-hour forecast..."):
-                forecast_24h = pd.DataFrame(forecast_next_24_hours_from_csv(csv_path))
+                forecast_24h = pd.DataFrame(
+                    forecast_next_24_hours_from_csv(
+                        csv_path,
+                        persist=True,
+                        source="dashboard",
+                    )
+                )
             forecast_24h["timestamp"] = pd.to_datetime(forecast_24h["timestamp"])
             forecast_24h = forecast_24h.set_index("timestamp")
 
@@ -156,6 +162,7 @@ def render_forecasts(csv_path: str) -> None:
                 chart_24h["lower_bound_mw"] = forecast_24h["lower_bound_mw"]
                 chart_24h["upper_bound_mw"] = forecast_24h["upper_bound_mw"]
 
+            st.success("24-hour forecast saved to history.")
             st.write("24-hour forecast")
             st.line_chart(chart_24h)
             st.dataframe(forecast_24h, use_container_width=True)
@@ -163,7 +170,13 @@ def render_forecasts(csv_path: str) -> None:
     with col2:
         if st.button("Run 7-day forecast", use_container_width=True):
             with st.spinner("Computing 7-day forecast..."):
-                forecast_7d = pd.DataFrame(forecast_next_7_days_from_csv(csv_path))
+                forecast_7d = pd.DataFrame(
+                    forecast_next_7_days_from_csv(
+                        csv_path,
+                        persist=True,
+                        source="dashboard",
+                    )
+                )
             forecast_7d["timestamp"] = pd.to_datetime(forecast_7d["timestamp"])
             forecast_7d = forecast_7d.set_index("timestamp")
 
@@ -172,6 +185,7 @@ def render_forecasts(csv_path: str) -> None:
                 chart_7d["lower_bound_mw"] = forecast_7d["lower_bound_mw"]
                 chart_7d["upper_bound_mw"] = forecast_7d["upper_bound_mw"]
 
+            st.success("7-day forecast saved to history.")
             st.write("7-day forecast")
             st.line_chart(chart_7d)
             st.dataframe(forecast_7d.head(72), use_container_width=True)
