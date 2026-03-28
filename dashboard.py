@@ -101,6 +101,7 @@ def format_forecast_history(df: pd.DataFrame) -> pd.DataFrame:
         out["horizon"] = ""
 
     rename_map = {
+        "id": "run_id",
         "source": "source",
         "model_name": "model",
         "point_count": "points",
@@ -108,7 +109,7 @@ def format_forecast_history(df: pd.DataFrame) -> pd.DataFrame:
     }
     out = out.rename(columns=rename_map)
 
-    keep_cols = ["run_time", "source", "horizon", "model", "points", "csv_path"]
+    keep_cols = ["run_id", "run_time", "source", "horizon", "model", "points", "csv_path"]
     keep_cols = [c for c in keep_cols if c in out.columns]
     return out[keep_cols]
 
@@ -391,6 +392,24 @@ def render_history_ops(parent_region: str, subba: str) -> None:
             else:
                 pretty_forecast_runs = format_forecast_history(forecast_runs)
                 st.dataframe(pretty_forecast_runs, use_container_width=True)
+
+                st.subheader("Forecast run details")
+                run_options = pretty_forecast_runs["run_id"].tolist()
+                selected_run = st.selectbox("Choose forecast run ID", run_options)
+
+                selected_row = pretty_forecast_runs[pretty_forecast_runs["run_id"] == selected_run].iloc[0]
+
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Run ID", str(selected_row["run_id"]))
+                d2.metric("Run time", str(selected_row["run_time"]))
+                d3.metric("Horizon", str(selected_row["horizon"]))
+                d4.metric("Points", str(selected_row["points"]))
+
+                d5, d6 = st.columns(2)
+                d5.metric("Source", str(selected_row["source"]))
+                d6.metric("Model", str(selected_row["model"]))
+
+                st.text_input("CSV path used", value=str(selected_row["csv_path"]), disabled=True)
 
     with col2:
         if st.button("Load retraining history", use_container_width=True):
