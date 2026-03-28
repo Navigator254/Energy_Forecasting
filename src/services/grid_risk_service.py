@@ -73,7 +73,6 @@ def _build_risk_output(
         raise ValueError("Thresholds must satisfy: 0 < elevated < high < critical")
 
     df = pd.DataFrame(forecast_records).copy()
-
     if df.empty:
         raise ValueError("Forecast records are empty.")
 
@@ -170,3 +169,80 @@ def grid_risk_7d_from_csv(
         high_ratio=high_ratio,
         critical_ratio=critical_ratio,
     )
+
+
+def load_shedding_risk_24h_from_csv(
+    csv_path: str,
+    elevated_ratio: float = 0.90,
+    high_ratio: float = 1.00,
+    critical_ratio: float = 1.10,
+) -> Dict[str, object]:
+    result = grid_risk_24h_from_csv(
+        csv_path,
+        elevated_ratio=elevated_ratio,
+        high_ratio=high_ratio,
+        critical_ratio=critical_ratio,
+    )
+    risk_df = result["risk_table"].copy()
+
+    shedding_df = risk_df[
+        [
+            "timestamp",
+            "predicted_load_mw",
+            "lower_bound_mw",
+            "upper_bound_mw",
+            "stress_ratio",
+            "stress_level",
+            "load_shedding_risk",
+        ]
+    ].copy()
+
+    summary = {
+        "high_risk_hours": int((shedding_df["load_shedding_risk"] == "High").sum()),
+        "moderate_risk_hours": int((shedding_df["load_shedding_risk"] == "Moderate").sum()),
+        "low_risk_hours": int((shedding_df["load_shedding_risk"] == "Low").sum()),
+    }
+
+    return {
+        "summary": summary,
+        "risk_table": shedding_df,
+    }
+
+
+def balancing_alerts_24h_from_csv(
+    csv_path: str,
+    elevated_ratio: float = 0.90,
+    high_ratio: float = 1.00,
+    critical_ratio: float = 1.10,
+) -> Dict[str, object]:
+    result = grid_risk_24h_from_csv(
+        csv_path,
+        elevated_ratio=elevated_ratio,
+        high_ratio=high_ratio,
+        critical_ratio=critical_ratio,
+    )
+    risk_df = result["risk_table"].copy()
+
+    alerts_df = risk_df[
+        risk_df["stress_level"].isin(["Elevated", "High", "Critical"])
+    ][
+        [
+            "timestamp",
+            "predicted_load_mw",
+            "stress_ratio",
+            "stress_level",
+            "balancing_recommendation",
+        ]
+    ].copy()
+
+    summary = {
+        "alert_hours": int(len(alerts_df)),
+        "critical_alert_hours": int((alerts_df["stress_level"] == "Critical").sum()) if not alerts_df.empty else 0,
+        "high_alert_hours": int((alerts_df["stress_level"] == "High").sum()) if not alerts_df.empty else 0,
+        "elevated_alert_hours": int((alerts_df["stress_level"] == "Elevated").sum()) if not alerts_df.empty else 0,
+    }
+
+    return {
+        "summary": summary,
+        "alerts": alerts_df,
+    }

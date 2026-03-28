@@ -12,8 +12,10 @@ from src.services.forecast_service import (
     forecast_next_7_days_from_csv,
 )
 from src.services.grid_risk_service import (
+    balancing_alerts_24h_from_csv,
     grid_risk_24h_from_csv,
     grid_risk_7d_from_csv,
+    load_shedding_risk_24h_from_csv,
 )
 from src.services.model_comparison_service import compare_models_from_csv
 from src.services.retrain_service import run_retraining_pipeline
@@ -24,8 +26,8 @@ load_project_env()
 
 app = FastAPI(
     title="Energy Forecasting API",
-    description="Hourly electricity load prediction API using trained regression models",
-    version="1.8.0",
+    description="Hourly electricity load prediction and grid risk API",
+    version="1.9.0",
 )
 
 
@@ -68,6 +70,13 @@ class BacktestPayload(BaseModel):
 class RetrainPayload(BaseModel):
     parent_region: str = "CISO"
     subba: str | None = None
+
+
+class GridRiskPayload(BaseModel):
+    csv_path: str = "data/PJME_hourly.csv"
+    elevated_ratio: float = 0.90
+    high_ratio: float = 1.00
+    critical_ratio: float = 1.10
 
 
 @app.on_event("startup")
@@ -121,9 +130,14 @@ def forecast_7d(payload: CsvPathPayload) -> Dict[str, List[Dict[str, float | str
 
 
 @app.post("/grid-risk-24h")
-def grid_risk_24h(payload: CsvPathPayload) -> Dict[str, object]:
+def grid_risk_24h(payload: GridRiskPayload) -> Dict[str, object]:
     try:
-        result = grid_risk_24h_from_csv(payload.csv_path)
+        result = grid_risk_24h_from_csv(
+            payload.csv_path,
+            elevated_ratio=payload.elevated_ratio,
+            high_ratio=payload.high_ratio,
+            critical_ratio=payload.critical_ratio,
+        )
         return {
             "summary": result["summary"],
             "risk_table": result["risk_table"].to_dict(orient="records"),
@@ -133,12 +147,51 @@ def grid_risk_24h(payload: CsvPathPayload) -> Dict[str, object]:
 
 
 @app.post("/grid-risk-7d")
-def grid_risk_7d(payload: CsvPathPayload) -> Dict[str, object]:
+def grid_risk_7d(payload: GridRiskPayload) -> Dict[str, object]:
     try:
-        result = grid_risk_7d_from_csv(payload.csv_path)
+        result = grid_risk_7d_from_csv(
+            payload.csv_path,
+            elevated_ratio=payload.elevated_ratio,
+            high_ratio=payload.high_ratio,
+            critical_ratio=payload.critical_ratio,
+        )
         return {
             "summary": result["summary"],
             "risk_table": result["risk_table"].to_dict(orient="records"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/load-shedding-risk")
+def load_shedding_risk(payload: GridRiskPayload) -> Dict[str, object]:
+    try:
+        result = load_shedding_risk_24h_from_csv(
+            payload.csv_path,
+            elevated_ratio=payload.elevated_ratio,
+            high_ratio=payload.high_ratio,
+            critical_ratio=payload.critical_ratio,
+        )
+        return {
+            "summary": result["summary"],
+            "risk_table": result["risk_table"].to_dict(orient="records"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/balancing-alerts")
+def balancing_alerts(payload: GridRiskPayload) -> Dict[str, object]:
+    try:
+        result = balancing_alerts_24h_from_csv(
+            payload.csv_path,
+            elevated_ratio=payload.elevated_ratio,
+            high_ratio=payload.high_ratio,
+            critical_ratio=payload.critical_ratio,
+        )
+        return {
+            "summary": result["summary"],
+            "alerts": result["alerts"].to_dict(orient="records"),
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
