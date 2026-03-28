@@ -37,11 +37,7 @@ def _classify_shedding_risk(
     baseline_load: float,
 ) -> str:
     interval_width_ratio = 0.0
-    if (
-        lower_bound is not None
-        and upper_bound is not None
-        and baseline_load > 0
-    ):
+    if lower_bound is not None and upper_bound is not None and baseline_load > 0:
         interval_width_ratio = (upper_bound - lower_bound) / baseline_load
 
     if stress_level == "Critical":
@@ -69,29 +65,25 @@ def _balancing_recommendation(stress_level: str) -> str:
 
 def _build_risk_output(
     forecast_records: List[Dict[str, float | str]],
+    elevated_ratio: float = 0.90,
+    high_ratio: float = 1.00,
+    critical_ratio: float = 1.10,
 ) -> Dict[str, object]:
+    if not (0 < elevated_ratio < high_ratio < critical_ratio):
+        raise ValueError("Thresholds must satisfy: 0 < elevated < high < critical")
+
     df = pd.DataFrame(forecast_records).copy()
 
     if df.empty:
         raise ValueError("Forecast records are empty.")
 
     df["predicted_load_mw"] = pd.to_numeric(df["predicted_load_mw"], errors="coerce")
-    if "lower_bound_mw" in df.columns:
-        df["lower_bound_mw"] = pd.to_numeric(df["lower_bound_mw"], errors="coerce")
-    else:
-        df["lower_bound_mw"] = None
-    if "upper_bound_mw" in df.columns:
-        df["upper_bound_mw"] = pd.to_numeric(df["upper_bound_mw"], errors="coerce")
-    else:
-        df["upper_bound_mw"] = None
+    df["lower_bound_mw"] = pd.to_numeric(df.get("lower_bound_mw"), errors="coerce")
+    df["upper_bound_mw"] = pd.to_numeric(df.get("upper_bound_mw"), errors="coerce")
 
     baseline_load = float(df["predicted_load_mw"].mean())
     recent_peak = float(df["predicted_load_mw"].max())
     reference_load = max(baseline_load, recent_peak * 0.85)
-
-    elevated_ratio = 0.90
-    high_ratio = 1.00
-    critical_ratio = 1.10
 
     rows = []
     for _, row in df.iterrows():
@@ -134,6 +126,9 @@ def _build_risk_output(
         "reference_load_mw": reference_load,
         "average_forecast_load_mw": baseline_load,
         "peak_forecast_load_mw": recent_peak,
+        "elevated_threshold": elevated_ratio,
+        "high_threshold": high_ratio,
+        "critical_threshold": critical_ratio,
         "critical_hours": int((risk_df["stress_level"] == "Critical").sum()),
         "high_hours": int((risk_df["stress_level"] == "High").sum()),
         "elevated_hours": int((risk_df["stress_level"] == "Elevated").sum()),
@@ -147,11 +142,31 @@ def _build_risk_output(
     }
 
 
-def grid_risk_24h_from_csv(csv_path: str) -> Dict[str, object]:
+def grid_risk_24h_from_csv(
+    csv_path: str,
+    elevated_ratio: float = 0.90,
+    high_ratio: float = 1.00,
+    critical_ratio: float = 1.10,
+) -> Dict[str, object]:
     forecast_records = forecast_next_24_hours_from_csv(csv_path)
-    return _build_risk_output(forecast_records)
+    return _build_risk_output(
+        forecast_records,
+        elevated_ratio=elevated_ratio,
+        high_ratio=high_ratio,
+        critical_ratio=critical_ratio,
+    )
 
 
-def grid_risk_7d_from_csv(csv_path: str) -> Dict[str, object]:
+def grid_risk_7d_from_csv(
+    csv_path: str,
+    elevated_ratio: float = 0.90,
+    high_ratio: float = 1.00,
+    critical_ratio: float = 1.10,
+) -> Dict[str, object]:
     forecast_records = forecast_next_7_days_from_csv(csv_path)
-    return _build_risk_output(forecast_records)
+    return _build_risk_output(
+        forecast_records,
+        elevated_ratio=elevated_ratio,
+        high_ratio=high_ratio,
+        critical_ratio=critical_ratio,
+    )
