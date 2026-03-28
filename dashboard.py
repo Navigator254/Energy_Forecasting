@@ -13,6 +13,10 @@ from src.services.forecast_service import (
     forecast_next_24_hours_from_csv,
     forecast_next_7_days_from_csv,
 )
+from src.services.grid_risk_service import (
+    grid_risk_24h_from_csv,
+    grid_risk_7d_from_csv,
+)
 from src.services.model_comparison_service import compare_models_from_csv
 from src.services.retrain_service import run_retraining_pipeline
 from src.services.storage_service import get_forecast_runs, get_retraining_runs, init_db
@@ -58,6 +62,16 @@ def get_usage_insights(csv_path: str) -> dict:
     return compute_usage_insights(csv_path)
 
 
+@st.cache_data
+def get_grid_risk_24h(csv_path: str) -> dict:
+    return grid_risk_24h_from_csv(csv_path)
+
+
+@st.cache_data
+def get_grid_risk_7d(csv_path: str) -> dict:
+    return grid_risk_7d_from_csv(csv_path)
+
+
 def bootstrap_section(default_parent: str, default_subba: str) -> bool:
     st.warning("Project data is not initialized yet on this deployment. Run the setup pipeline first.")
 
@@ -85,11 +99,26 @@ def bootstrap_section(default_parent: str, default_subba: str) -> bool:
     st.stop()
 
 
+def style_risk_table(df: pd.DataFrame) -> pd.DataFrame:
+    ordered_cols = [
+        "timestamp",
+        "predicted_load_mw",
+        "lower_bound_mw",
+        "upper_bound_mw",
+        "stress_ratio",
+        "stress_level",
+        "load_shedding_risk",
+        "balancing_recommendation",
+    ]
+    existing = [c for c in ordered_cols if c in df.columns]
+    return df[existing].copy()
+
+
 def main():
     init_db()
 
     st.title("Energy Forecasting Dashboard")
-    st.write("Forecasting, backtesting, model comparison, persistence, retraining, and demand insights.")
+    st.write("Forecasting, grid risk intelligence, backtesting, model comparison, persistence, retraining, and demand insights.")
 
     with st.sidebar:
         st.header("Controls")
@@ -119,8 +148,16 @@ def main():
     s3.metric("Busiest day", summary["busiest_day"], f"{summary['busiest_day_avg_load_mw']:.1f} MW avg")
     s4.metric("Busiest month", summary["busiest_month"], f"{summary['busiest_month_avg_load_mw']:.1f} MW avg")
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["Forecasts", "Usage patterns", "Backtesting", "Model comparison", "History & Ops", "Model details"]
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        [
+            "Forecasts",
+            "Grid Risk",
+            "Usage patterns",
+            "Backtesting",
+            "Model comparison",
+            "History & Ops",
+            "Model details",
+        ]
     )
 
     with tab1:
@@ -164,6 +201,87 @@ def main():
             st.success(f"Saved {len(saved)} forecast points to history.")
 
     with tab2:
+        st.subheader("Grid risk — next 24 hours")
+        risk_24h = get_grid_risk_24h(csv_path)
+        risk_24h_df = style_risk_table(risk_24h["risk_table"].copy())
+        risk_24h_df["timestamp"] = pd.to_datetime(risk_24h_df["timestamp"])
+        risk_24h_df = risk_24h_df.set_index("timestamp")
+        risk_24h_summary = risk_24h["summary"]
+
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Critical hours (24h)", risk_24h_summary["critical_hours"])
+        r2.metric("High stress hours (24h)", risk_24h_summary["high_hours"])
+        r3.metric("Elevated hours (24h)", risk_24h_summary["elevated_hours"])
+        r4.metric("High shedding risk hours (24h)", risk_24h_summary["high_shedding_risk_hours"])
+
+        st.write("Stress ratio over next 24 hours")
+        st.line_chart(risk_24h_df["stress_ratio"])
+
+        st.write("Predicted load and forecast band over next 24 hours")
+        risk_24h_chart = risk_24h_df[["predicted_load_mw"]].copy()
+        if "lower_bound_mw" in risk_24h_df.columns:
+            risk_24h_chart["lower_bound_mw"] = risk_24h_df["lower_bound_mw"]
+            risk_24h_chart["upper_bound_mw"] = risk_24h_df["upper_bound_mw"]
+        st.line_chart(risk_24h_chart)
+
+        st.write("Top critical/high-risk hours")
+        top_critical_24h = risk_24h_df[
+            risk_24h_df["stress_level"].isin(["Critical", "High"])
+        ].sort_values(["stress_ratio", "predicted_load_mw"], ascending=False)
+        if top_critical_24h.empty:
+            st.info("No high or critical hours detected in the next 24 hours.")
+        else:
+            st.dataframe(top_critical_24h, use_container_width=True)
+
+        st.write("24-hour risk table")
+        st.dataframe(risk_24h_df, use_container_width=True)
+
+        csv_risk_24h = risk_24h_df.reset_index().to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download 24-hour grid risk CSV",
+            data=csv_risk_24h,
+            file_name="grid_risk_24h.csv",
+            mime="text/csv",
+        )
+
+        st.subheader("Grid risk — next 7 days")
+        risk_7d = get_grid_risk_7d(csv_path)
+        risk_7d_df = style_risk_table(risk_7d["risk_table"].copy())
+        risk_7d_df["timestamp"] = pd.to_datetime(risk_7d_df["timestamp"])
+        risk_7d_df = risk_7d_df.set_index("timestamp")
+        risk_7d_summary = risk_7d["summary"]
+
+        rr1, rr2, rr3, rr4 = st.columns(4)
+        rr1.metric("Critical hours (7d)", risk_7d_summary["critical_hours"])
+        rr2.metric("High stress hours (7d)", risk_7d_summary["high_hours"])
+        rr3.metric("Moderate shedding risk hours (7d)", risk_7d_summary["moderate_shedding_risk_hours"])
+        rr4.metric("High shedding risk hours (7d)", risk_7d_summary["high_shedding_risk_hours"])
+
+        st.write("Stress ratio across the next 7 days")
+        st.line_chart(risk_7d_df["stress_ratio"])
+
+        st.write("Highest-risk windows across the next 7 days")
+        top_critical_7d = risk_7d_df[
+            risk_7d_df["stress_level"].isin(["Critical", "High"])
+        ].sort_values(["stress_ratio", "predicted_load_mw"], ascending=False)
+        if top_critical_7d.empty:
+            st.info("No high or critical hours detected in the next 7 days.")
+        else:
+            st.dataframe(top_critical_7d.head(30), use_container_width=True)
+
+        st.write("Load shedding risk view")
+        shedding_view = risk_7d_df[["predicted_load_mw", "load_shedding_risk", "balancing_recommendation"]].copy()
+        st.dataframe(shedding_view.head(72), use_container_width=True)
+
+        csv_risk_7d = risk_7d_df.reset_index().to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download 7-day grid risk CSV",
+            data=csv_risk_7d,
+            file_name="grid_risk_7d.csv",
+            mime="text/csv",
+        )
+
+    with tab3:
         st.subheader("Average energy use by hour")
         st.bar_chart(insights["hourly_avg"].set_index("hour")["avg_load_mw"])
 
@@ -188,7 +306,7 @@ def main():
         csv_peaks = top_peaks.to_csv(index=False).encode("utf-8")
         st.download_button("Download top peak timestamps CSV", data=csv_peaks, file_name="top_10_peaks.csv", mime="text/csv")
 
-    with tab3:
+    with tab4:
         st.subheader("Backtest")
         backtest = get_backtest(csv_path, backtest_hours)
         backtest_metrics = backtest["metrics"]
@@ -213,7 +331,7 @@ def main():
         csv_backtest = backtest_df.reset_index().to_csv(index=False).encode("utf-8")
         st.download_button("Download backtest CSV", data=csv_backtest, file_name="backtest_results.csv", mime="text/csv")
 
-    with tab4:
+    with tab5:
         st.subheader("Model comparison")
         comparison_df = get_model_comparison(csv_path)
         st.dataframe(comparison_df, use_container_width=True)
@@ -225,7 +343,7 @@ def main():
         csv_comparison = comparison_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download model comparison CSV", data=csv_comparison, file_name="model_comparison.csv", mime="text/csv")
 
-    with tab5:
+    with tab6:
         st.subheader("Forecast history")
         forecast_runs = pd.DataFrame(get_forecast_runs(limit=20))
         if not forecast_runs.empty:
@@ -248,7 +366,7 @@ def main():
                 st.success("Retraining complete.")
                 st.json(result)
 
-    with tab6:
+    with tab7:
         if METRICS_PATH.exists():
             st.subheader("Saved training metrics")
             with open(METRICS_PATH, "r", encoding="utf-8") as f:
