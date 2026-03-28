@@ -7,6 +7,7 @@ import streamlit as st
 from src.utils.env_loader import load_project_env
 from src.data.load_data import load_energy_data
 from src.models.predict import predict_next_from_csv
+from src.services.alert_service import build_threshold_alerts_from_csv
 from src.services.analytics_service import compute_usage_insights
 from src.services.backtest_service import backtest_one_step
 from src.services.forecast_service import (
@@ -55,7 +56,7 @@ def bootstrap_section(default_parent: str, default_subba: str) -> None:
                 st.cache_data.clear()
             st.success("Setup complete.")
             st.json(result)
-            st.info("Refresh the page to continue.")
+            st.rerun()
         except Exception as exc:
             st.error(f"Setup failed: {exc}")
 
@@ -96,6 +97,45 @@ def render_home(csv_path: str, df: pd.DataFrame) -> None:
     st.line_chart(df.tail(168)["load_mw"])
 
     st.info("Use the sidebar to load heavier sections only when you need them.")
+
+
+def render_alerts(csv_path: str, elevated_ratio: float, high_ratio: float, critical_ratio: float) -> None:
+    st.subheader("Alerts")
+
+    high_shedding_only = st.checkbox("Show only high load-shedding alerts", value=False)
+
+    if st.button("Generate threshold alerts", use_container_width=True):
+        with st.spinner("Generating alerts..."):
+            result = build_threshold_alerts_from_csv(
+                csv_path=csv_path,
+                elevated_ratio=elevated_ratio,
+                high_ratio=high_ratio,
+                critical_ratio=critical_ratio,
+                high_shedding_only=high_shedding_only,
+            )
+
+        summary = result["summary"]
+        alerts_df = result["alerts"]
+
+        a1, a2, a3 = st.columns(3)
+        a1.metric("Total alerts", summary["total_alerts"])
+        a2.metric("Balancing alerts", summary["balancing_alerts"])
+        a3.metric("Load shedding alerts", summary["load_shedding_alerts"])
+
+        if alerts_df.empty:
+            st.success("No active alerts for the current thresholds.")
+            return
+
+        st.warning("Alerts generated from the next 24-hour forecast horizon.")
+        st.dataframe(alerts_df, use_container_width=True)
+
+        csv_alerts = alerts_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download alerts CSV",
+            data=csv_alerts,
+            file_name="alerts_24h.csv",
+            mime="text/csv",
+        )
 
 
 def render_forecasts(csv_path: str) -> None:
@@ -178,27 +218,7 @@ def render_grid_risk(csv_path: str, elevated_ratio: float, high_ratio: float, cr
             r3.metric("Elevated hours", summary["elevated_hours"])
             r4.metric("High shedding risk hours", summary["high_shedding_risk_hours"])
 
-            st.caption(
-                f"Thresholds — Elevated: {elevated_ratio:.2f}, High: {high_ratio:.2f}, Critical: {critical_ratio:.2f}"
-            )
-
             st.line_chart(risk_24h_df["stress_ratio"])
-
-            risk_chart = risk_24h_df[["predicted_load_mw"]].copy()
-            if "lower_bound_mw" in risk_24h_df.columns:
-                risk_chart["lower_bound_mw"] = risk_24h_df["lower_bound_mw"]
-                risk_chart["upper_bound_mw"] = risk_24h_df["upper_bound_mw"]
-            st.line_chart(risk_chart)
-
-            top_critical = risk_24h_df[
-                risk_24h_df["stress_level"].isin(["Critical", "High"])
-            ].sort_values(["stress_ratio", "predicted_load_mw"], ascending=False)
-
-            if top_critical.empty:
-                st.info("No critical or high-risk hours detected.")
-            else:
-                st.dataframe(top_critical, use_container_width=True)
-
             st.dataframe(risk_24h_df, use_container_width=True)
 
     with c2:
@@ -223,28 +243,7 @@ def render_grid_risk(csv_path: str, elevated_ratio: float, high_ratio: float, cr
             r4.metric("High shedding risk hours", summary["high_shedding_risk_hours"])
 
             st.line_chart(risk_7d_df["stress_ratio"])
-
-            top_critical = risk_7d_df[
-                risk_7d_df["stress_level"].isin(["Critical", "High"])
-            ].sort_values(["stress_ratio", "predicted_load_mw"], ascending=False)
-
-            if top_critical.empty:
-                st.info("No critical or high-risk hours detected.")
-            else:
-                st.dataframe(top_critical.head(30), use_container_width=True)
-
-            shedding_view = risk_7d_df[
-                ["predicted_load_mw", "load_shedding_risk", "balancing_recommendation"]
-            ].copy()
-            st.dataframe(shedding_view.head(72), use_container_width=True)
-
-            csv_risk_7d = risk_7d_df.reset_index().to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download 7-day grid risk CSV",
-                data=csv_risk_7d,
-                file_name="grid_risk_7d.csv",
-                mime="text/csv",
-            )
+            st.dataframe(risk_7d_df.head(72), use_container_width=True)
 
 
 def render_usage_patterns(csv_path: str) -> None:
@@ -264,13 +263,6 @@ def render_usage_patterns(csv_path: str) -> None:
         st.bar_chart(insights["hourly_avg"].set_index("hour")["avg_load_mw"])
         st.bar_chart(insights["weekday_avg"].set_index("day_name")["avg_load_mw"])
         st.bar_chart(insights["monthly_avg"].set_index("month_name")["avg_load_mw"])
-
-        daily_peak = insights["daily_peak"].copy()
-        daily_peak["date"] = pd.to_datetime(daily_peak["date"])
-        st.line_chart(daily_peak.set_index("date")["daily_peak_load_mw"])
-
-        st.dataframe(insights["hourly_heatmap"], use_container_width=True)
-        st.dataframe(insights["top_10_peaks"], use_container_width=True)
 
 
 def render_backtesting(csv_path: str, backtest_hours: int) -> None:
@@ -336,6 +328,7 @@ def render_history_ops(parent_region: str, subba: str) -> None:
             st.cache_data.clear()
             st.success("Retraining complete.")
             st.json(result)
+            st.rerun()
 
 
 def render_model_details() -> None:
@@ -358,7 +351,7 @@ def main():
     init_db()
 
     st.title("Energy Forecasting Dashboard")
-    st.write("A lighter dashboard that loads heavy analysis only on demand.")
+    st.write("Forecasting, grid-risk intelligence, threshold alerts, and automatic rerun after retraining.")
 
     with st.sidebar:
         st.header("Controls")
@@ -367,6 +360,7 @@ def main():
             "Section",
             [
                 "Home",
+                "Alerts",
                 "Forecasts",
                 "Grid Risk",
                 "Usage Patterns",
@@ -401,6 +395,8 @@ def main():
 
     if page == "Home":
         render_home(csv_path, df)
+    elif page == "Alerts":
+        render_alerts(csv_path, elevated_ratio, high_ratio, critical_ratio)
     elif page == "Forecasts":
         render_forecasts(csv_path)
     elif page == "Grid Risk":

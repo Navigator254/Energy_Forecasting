@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from src.utils.env_loader import load_project_env
 
 from src.models.predict import predict_from_feature_payload, predict_next_from_csv
+from src.services.alert_service import build_threshold_alerts_from_csv
 from src.services.analytics_service import compute_usage_insights
 from src.services.backtest_service import backtest_one_step
 from src.services.forecast_service import (
@@ -27,7 +28,7 @@ load_project_env()
 app = FastAPI(
     title="Energy Forecasting API",
     description="Hourly electricity load prediction and grid risk API",
-    version="1.9.0",
+    version="2.0.0",
 )
 
 
@@ -77,6 +78,14 @@ class GridRiskPayload(BaseModel):
     elevated_ratio: float = 0.90
     high_ratio: float = 1.00
     critical_ratio: float = 1.10
+
+
+class AlertPayload(BaseModel):
+    csv_path: str = "data/PJME_hourly.csv"
+    elevated_ratio: float = 0.90
+    high_ratio: float = 1.00
+    critical_ratio: float = 1.10
+    high_shedding_only: bool = False
 
 
 @app.on_event("startup")
@@ -188,6 +197,24 @@ def balancing_alerts(payload: GridRiskPayload) -> Dict[str, object]:
             elevated_ratio=payload.elevated_ratio,
             high_ratio=payload.high_ratio,
             critical_ratio=payload.critical_ratio,
+        )
+        return {
+            "summary": result["summary"],
+            "alerts": result["alerts"].to_dict(orient="records"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/alerts")
+def alerts(payload: AlertPayload) -> Dict[str, object]:
+    try:
+        result = build_threshold_alerts_from_csv(
+            csv_path=payload.csv_path,
+            elevated_ratio=payload.elevated_ratio,
+            high_ratio=payload.high_ratio,
+            critical_ratio=payload.critical_ratio,
+            high_shedding_only=payload.high_shedding_only,
         )
         return {
             "summary": result["summary"],
