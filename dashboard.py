@@ -54,9 +54,10 @@ def bootstrap_section(default_parent: str, default_subba: str) -> None:
                     subba=subba or None,
                 )
                 st.cache_data.clear()
-            st.success("Setup complete.")
+                st.session_state["setup_complete"] = True
+                st.session_state["setup_result"] = result
+            st.success("Setup complete. Refresh once if the dataset view does not update immediately.")
             st.json(result)
-            st.rerun()
         except Exception as exc:
             st.error(f"Setup failed: {exc}")
 
@@ -96,7 +97,7 @@ def render_home(csv_path: str, df: pd.DataFrame) -> None:
     st.write("Recent actual load")
     st.line_chart(df.tail(168)["load_mw"])
 
-    st.info("Use the sidebar to load heavier sections only when you need them.")
+    st.info("Use the sidebar to load heavier sections only when needed.")
 
 
 def render_alerts(csv_path: str, elevated_ratio: float, high_ratio: float, critical_ratio: float) -> None:
@@ -159,14 +160,6 @@ def render_forecasts(csv_path: str) -> None:
             st.line_chart(chart_24h)
             st.dataframe(forecast_24h, use_container_width=True)
 
-            csv_24h = forecast_24h.reset_index().to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download 24-hour forecast CSV",
-                data=csv_24h,
-                file_name="forecast_24h.csv",
-                mime="text/csv",
-            )
-
     with col2:
         if st.button("Run 7-day forecast", use_container_width=True):
             with st.spinner("Computing 7-day forecast..."):
@@ -182,14 +175,6 @@ def render_forecasts(csv_path: str) -> None:
             st.write("7-day forecast")
             st.line_chart(chart_7d)
             st.dataframe(forecast_7d.head(72), use_container_width=True)
-
-            csv_7d = forecast_7d.reset_index().to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download 7-day forecast CSV",
-                data=csv_7d,
-                file_name="forecast_7d.csv",
-                mime="text/csv",
-            )
 
 
 def render_grid_risk(csv_path: str, elevated_ratio: float, high_ratio: float, critical_ratio: float) -> None:
@@ -326,9 +311,10 @@ def render_history_ops(parent_region: str, subba: str) -> None:
         with st.spinner("Fetching data and retraining..."):
             result = run_retraining_pipeline(parent_region=parent_region, subba=subba or None)
             st.cache_data.clear()
+            st.session_state["retraining_complete"] = True
+            st.session_state["retraining_result"] = result
             st.success("Retraining complete.")
             st.json(result)
-            st.rerun()
 
 
 def render_model_details() -> None:
@@ -350,8 +336,18 @@ def render_model_details() -> None:
 def main():
     init_db()
 
+    if "setup_complete" not in st.session_state:
+        st.session_state["setup_complete"] = False
+    if "retraining_complete" not in st.session_state:
+        st.session_state["retraining_complete"] = False
+
     st.title("Energy Forecasting Dashboard")
-    st.write("Forecasting, grid-risk intelligence, threshold alerts, and automatic rerun after retraining.")
+    st.write("Forecasting, grid-risk intelligence, threshold alerts, and safer cloud execution.")
+
+    if st.session_state.get("setup_complete"):
+        st.success("Project setup completed successfully.")
+    if st.session_state.get("retraining_complete"):
+        st.success("Retraining completed successfully.")
 
     with st.sidebar:
         st.header("Controls")

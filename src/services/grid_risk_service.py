@@ -77,8 +77,16 @@ def _build_risk_output(
         raise ValueError("Forecast records are empty.")
 
     df["predicted_load_mw"] = pd.to_numeric(df["predicted_load_mw"], errors="coerce")
-    df["lower_bound_mw"] = pd.to_numeric(df.get("lower_bound_mw"), errors="coerce")
-    df["upper_bound_mw"] = pd.to_numeric(df.get("upper_bound_mw"), errors="coerce")
+
+    if "lower_bound_mw" in df.columns:
+        df["lower_bound_mw"] = pd.to_numeric(df["lower_bound_mw"], errors="coerce")
+    else:
+        df["lower_bound_mw"] = pd.Series([None] * len(df), dtype="float")
+
+    if "upper_bound_mw" in df.columns:
+        df["upper_bound_mw"] = pd.to_numeric(df["upper_bound_mw"], errors="coerce")
+    else:
+        df["upper_bound_mw"] = pd.Series([None] * len(df), dtype="float")
 
     baseline_load = float(df["predicted_load_mw"].mean())
     recent_peak = float(df["predicted_load_mw"].max())
