@@ -1,4 +1,4 @@
-cat > README.md <<'EOF'
+
 # Energy Forecasting System
 
 An end-to-end electricity demand forecasting project with:
